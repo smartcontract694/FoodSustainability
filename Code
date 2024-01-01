@@ -1,0 +1,291 @@
+pragma solidity ^0.8.6;
+
+///////////////////////
+///Registration SC////
+//////////////////////
+
+contract Registration{
+   
+    address manager; // associated with the government
+    mapping(address=>bool) RegisteredAgTechs;
+     mapping(address=>bool) RegisteredFarmers;
+     mapping(address=>bool) Oracles;
+      mapping(address=>bool) RegisteredCertificationAuthorities;
+      mapping(address=>bool) RegisteredDistributers;
+      
+   
+    constructor() public{
+       manager= msg.sender;
+    }
+   
+    modifier onlyManager{
+      require(msg.sender == manager);
+      _;
+    }
+    modifier onlyRegisteredAgTechs{
+      require(RegisteredAgTechs[msg.sender]); 
+      _;
+    }
+   //Farmers
+    function RegisterFarmer(address a) onlyManager public{
+        RegisteredFarmers[a]=true;
+    }
+   
+    function RevokeFarmer(address a) onlyManager public{
+        RegisteredFarmers[a]=false;
+    }
+   
+    function RegisteredFarmer(address a) public  returns (bool){
+        return RegisteredFarmers[a];
+       
+    }
+    //AgTech
+      function RegisterAgTech(address a) onlyManager public{
+        RegisteredAgTechs[a]=true;
+    }
+   
+    function RevokeAgTech(address a) onlyManager public{
+        RegisteredAgTechs[a]=false;
+    }
+   
+    function RegisteredAgTech(address a) public returns (bool) {
+        return RegisteredAgTechs[a];
+    }
+     //RegisteredCertificationAuthorities
+      function RegisterCertificationAuthority(address a) onlyManager public{
+        RegisteredCertificationAuthorities[a]=true;
+    }
+   
+    function RevokeCertificationAuthority(address a) onlyManager public{
+        RegisteredCertificationAuthorities[a]=false;
+    }
+   
+    function RegisteredCertificationAuthority(address a) public returns (bool) {
+        return (RegisteredCertificationAuthorities[a]);    
+       
+    }
+    //RegisteredDistributers    
+       function RegisterDistributer(address a) onlyManager public{
+        RegisteredDistributers[a]=true;
+    }
+   
+    function RevokeDistributer(address a) onlyManager public{
+        RegisteredDistributers[a]=false;
+    }
+   
+    function RegisteredDistributer(address a) public returns (bool){
+        return (RegisteredDistributers[a]);    
+       
+    }
+//RegisteredOracles   
+       function RegisterOracle(address a) onlyManager public{
+        Oracles[a]=true;
+    }
+   
+    function RevokeOracle(address a) onlyManager public{
+        Oracles[a]=false;
+    }
+   
+    function RegisteredOracle(address a) public returns (bool){
+        return (Oracles[a]);    
+       
+    }
+   
+}
+
+/////////////////////////////////////
+//Sustainable Farm Management SC////
+////////////////////////////////////
+
+contract SFM{
+  address manager;
+  mapping(address=>bool) IoT;
+    enum CertificationType{
+        Organic,
+        NonGMO,
+        GlobalGAP,
+        OrganicNonGMO,
+        OrganicGlobalGAP,
+        NonGMOGlobalGAP,
+        AllThree
+    }
+    enum AnomalyStatus{
+        Reported,
+        InProgress,
+        Resolved
+    }
+    enum LandPieceStatus{
+        Ready,
+        Planted,
+        Harvested,
+        Anomaly,
+        CropLotReady,
+        PendingCertificationApproval
+    }
+  mapping (uint=>AnomalyStatus) Anomalies;//(reported,in progress, resolved)
+  mapping(uint=>LandPieceStatus) LandPieces;
+  mapping(uint=>LandPieceStatus) PrevLandStatus;//statuses before anomalies
+uint anomalyCount;
+uint landpieces;
+Registration registrationSC;
+
+  constructor(uint lp, address registration) public{
+       manager= msg.sender;
+       anomalyCount =0;
+       landpieces = lp;
+       registrationSC = Registration(registration);
+    }
+
+function RequestFarmCertification(CertificationType certificationtype) public{
+    require(msg.sender == manager);//farmer
+    emit FarmCertificationRequest(msg.sender, certificationtype);
+
+
+}
+event  FarmCertificationRequest(address farmer, CertificationType certificationtype);
+event AnomalyReported(address sensor, bytes32 IPFShash, uint landPiece, uint anomalyCount,  AnomalyStatus anomalyStatus, uint time);
+event AnomalyStatusChange(address manager, uint AnomalyNum,uint landPiece,AnomalyStatus status);
+event SeedsPlanted(address farmer, bytes32 seedsInfoHash, uint time, uint landPieceNumber, LandPieceStatus status);
+event CropsHarvested(address farmer, bytes32 cropsInfoHash, uint time, uint landPieceNumber, LandPieceStatus status);
+event CropLotReady(address farmer, bytes32 lotInfoHash, uint time, bytes32 QRcodeHash,uint landPieceNumber, LandPieceStatus status, address LotAddress);
+event CropLotCertificationRequest(address farmer, bytes32 lotInfoHash, uint time, bytes32 QRcodeHash,uint landPieceNumber, LandPieceStatus status, CertificationType certification, address LotAddress);
+event LandPieceReadyToPlant(uint landPiece, bytes32 hash, uint time);
+event BioSensorInstalledSuccessfully(address sensor, bytes32 hash);
+
+function getLandPieceStatus(uint landPieceNum) public  returns(LandPieceStatus)
+{
+    return LandPieces[landPieceNum];
+}
+
+function registerInstalledBioSensor(address sensor, bytes32 hash) public{
+    require(registrationSC.RegisteredAgTech(msg.sender) == true);//AgTech
+    IoT[sensor] = true;
+    emit BioSensorInstalledSuccessfully(sensor, hash);
+
+}
+
+function ReadyToPlant(uint landPiece, bytes32 hash) public{
+    require(registrationSC.RegisteredFarmer(msg.sender) == true);
+     LandPieces[landPiece]=LandPieceStatus.Ready;
+     emit LandPieceReadyToPlant( landPiece,  hash, block.timestamp);
+}
+//0x0000000000000000000000000000000000000000000000000000006d6168616d
+function PlantSeeds(uint landPiece, bytes32 hash) public{//only by  farmer
+     require(registrationSC.RegisteredFarmer(msg.sender) == true);
+      require(LandPieces[landPiece]==LandPieceStatus.Ready);
+    LandPieces[landPiece] = LandPieceStatus.Planted;
+    emit SeedsPlanted(msg.sender, hash,block.timestamp, landPiece, LandPieceStatus.Planted );
+}
+
+function HarvestCrops(uint landPiece, bytes32 hash) public{//only by  farmer
+     require(registrationSC.RegisteredFarmer(msg.sender) == true);
+     require(LandPieces[landPiece]==LandPieceStatus.Planted);//already planted
+     LandPieces[landPiece] = LandPieceStatus.Harvested;
+    emit CropsHarvested(msg.sender, hash,block.timestamp, landPiece, LandPieceStatus.Harvested );
+}
+
+function PrepareCropLot(uint landPiece, bytes32 hash, bytes32 QRcodeHash, address LotAddress) public{
+     require(registrationSC.RegisteredFarmer(msg.sender) == true);
+     require(LandPieces[landPiece]==LandPieceStatus.Harvested);//already planted
+     LandPieces[landPiece] = LandPieceStatus.CropLotReady;
+    emit CropLotReady(msg.sender, hash,block.timestamp, QRcodeHash,landPiece, LandPieceStatus.CropLotReady,LotAddress );
+}
+
+//use enums instead of string .. take into account the multiple certification requests
+function RequestCropLotCertification(uint landPiece, bytes32 hash,  CertificationType certification, bytes32 QRcodeHash, address LotAddress) public{
+    require(registrationSC.RegisteredFarmer(msg.sender) == true);
+     require(LandPieces[landPiece]==LandPieceStatus.CropLotReady);
+      LandPieces[landPiece] = LandPieceStatus.PendingCertificationApproval;
+      emit CropLotCertificationRequest(msg.sender, hash,block.timestamp, QRcodeHash,landPiece, LandPieceStatus.PendingCertificationApproval, certification,LotAddress );
+}
+
+function reportAnomaly(address sensor, bytes32 hash, uint landPiece) public{//only by oracle
+    require(registrationSC.RegisteredOracle(msg.sender) == true);
+    require(IoT[sensor] == true);
+    anomalyCount++;
+    Anomalies[anomalyCount]=AnomalyStatus.Reported;
+   if(PrevLandStatus[landPiece] != LandPieceStatus.Anomaly)//if its other than anomaly save the status
+        PrevLandStatus[landPiece] =  LandPieces[landPiece];//save the status before the anomaly
+     LandPieces[landPiece] = LandPieceStatus.Anomaly;
+    emit AnomalyReported(sensor, hash, landPiece, anomalyCount,AnomalyStatus.Reported, block.timestamp);
+}
+
+function AnomalyInProgress(uint anomalyNum,uint landPiece) public{//only by farmer
+     require(registrationSC.RegisteredFarmer(msg.sender) == true);
+     require(LandPieces[landPiece] == LandPieceStatus.Anomaly);
+      require(Anomalies[anomalyCount]==AnomalyStatus.Reported);
+    Anomalies[anomalyNum]=AnomalyStatus.InProgress;
+    emit AnomalyStatusChange(msg.sender, anomalyNum,landPiece,AnomalyStatus.InProgress );
+}
+
+function AnomalyResolved(uint anomalyNum, uint landPiece) public{//only by farmer
+     require(registrationSC.RegisteredFarmer(msg.sender) == true );
+   require(LandPieces[landPiece] == LandPieceStatus.Anomaly);
+    require(Anomalies[anomalyNum]==AnomalyStatus.InProgress);
+    Anomalies[anomalyNum]=AnomalyStatus.Resolved;
+    LandPieces[landPiece] = PrevLandStatus[landPiece];//go back to the status before anomaly
+    emit AnomalyStatusChange(msg.sender, anomalyNum,landPiece, AnomalyStatus.Resolved );
+}
+
+
+
+
+}
+//////////////////////
+//CERTIFICATION///////
+/////////////////////
+contract Certification{
+address certificateAuthority;
+mapping(address=>bool) organicFarms;
+mapping (address=>bool) NonGMOFarms;
+mapping (address=>bool) GlobalGAPFarms;
+
+
+constructor() public{
+       certificateAuthority= msg.sender;
+      
+    }
+
+modifier onlyCA{
+     require(msg.sender == certificateAuthority);
+      _;
+
+}
+
+function registerOrganicFarm(address farmSCaddress) onlyCA public{
+    organicFarms[farmSCaddress] = true;
+    emit OrganicFarmRegistered(farmSCaddress);
+}
+
+function registerNonGMOFarm(address farmSCaddress)onlyCA public
+{
+    NonGMOFarms[farmSCaddress] = true;
+    emit NonGMOFarmRegistered(farmSCaddress);
+}
+
+function registerGlobalGAPFarm(address farmSCaddress)onlyCA public{
+    GlobalGAPFarms[farmSCaddress] = true;
+    emit GlobalGAPFarmRegistered(farmSCaddress);
+}
+event OrganicFarmRegistered(address farmSC);
+event NonGMOFarmRegistered(address farmSC);
+event GlobalGAPFarmRegistered(address farmSC);
+event LotApprovedAsOrganicCertified(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress);
+event LotApprovedAsNonGMOCertified(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress);
+event LotApprovedAsGlobalGAPCertified(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress);
+
+function approveProduceLotForOrganicCertification(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress )onlyCA public{
+    require(organicFarms[farmSC] == true);
+    emit LotApprovedAsOrganicCertified(farmSC, QRcodeHash, landPiece, LotAddress);
+}
+
+function approveProduceLotForNonGMOCertification(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress )onlyCA public{
+    require(NonGMOFarms[farmSC] == true);
+    emit LotApprovedAsNonGMOCertified(farmSC, QRcodeHash, landPiece, LotAddress);
+}
+
+function approveProduceLotForGlobalGAPCertification(address farmSC, bytes32 QRcodeHash,uint landPiece, address LotAddress )onlyCA public{
+    require(GlobalGAPFarms[farmSC] == true);
+    emit  LotApprovedAsGlobalGAPCertified(farmSC, QRcodeHash, landPiece, LotAddress);
+}
+}
